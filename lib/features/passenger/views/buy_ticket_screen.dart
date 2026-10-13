@@ -2,6 +2,7 @@ import 'package:flutter/material.dart';
 import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:transport_app/models/ticket_model.dart';
+import 'package:transport_app/features/passenger/views/my_tickets.dart';
 
 class BuyTicketScreen extends StatefulWidget {
   final Map<String, dynamic> selectedBus;
@@ -79,6 +80,7 @@ class _BuyTicketScreenState extends State<BuyTicketScreen> {
           .collection('tickets')
           .add({
         ...newTicket.toMap(),
+        'userId': FirebaseAuth.instance.currentUser?.uid,
         'paymentMethod': selectedPaymentMethod,
       });
 
@@ -89,7 +91,22 @@ class _BuyTicketScreenState extends State<BuyTicketScreen> {
             backgroundColor: Colors.green,
           ),
         );
-        Navigator.pop(context); // Closing the screen
+
+        TicketModel bookedTicket = TicketModel(
+          ticketId: docRef.id, // The Firestore Document ID is required for the QR code.
+          passengerName: newTicket.passengerName,
+          busNumber: newTicket.busNumber,
+          routeName: newTicket.routeName,
+          fare: newTicket.fare,
+          purchaseTime: newTicket.purchaseTime,
+          status: newTicket.status,
+        );
+
+        Navigator.pushReplacement(context, MaterialPageRoute(
+          builder: (context) => MyTicketsScreen(
+            activeTicket: bookedTicket,
+          ),
+        ));
       }
     } catch (e) {
       if (mounted) {
