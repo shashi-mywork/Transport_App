@@ -1,12 +1,17 @@
 import 'dart:convert';
 import 'package:flutter/material.dart';
-import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_auth/firebase_auth.dart';
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:qr_flutter/qr_flutter.dart';
 import 'package:transport_app/models/ticket_model.dart';
 
 class MyTicketsScreen extends StatefulWidget {
-  const MyTicketsScreen({super.key});
+  final TicketModel? activeTicket;
+
+  const MyTicketsScreen({
+    super.key,
+    this.activeTicket,
+  });
 
   @override
   State<MyTicketsScreen> createState() => _MyTicketsScreenState();
@@ -15,7 +20,7 @@ class MyTicketsScreen extends StatefulWidget {
 class _MyTicketsScreenState extends State<MyTicketsScreen> {
   final User? currentUser = FirebaseAuth.instance.currentUser;
 
-  // Preparing JSON data to display the destination and fare amount when the QR code is scanned.
+  // Preparing JSON data to display when the QR code is scanned.
   String _generateQrData(TicketModel ticket) {
     Map<String, dynamic> qrPayload = {
       'ticketId': ticket.ticketId ?? DateTime.now().millisecondsSinceEpoch.toString(),
@@ -28,90 +33,94 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
     return jsonEncode(qrPayload);
   }
 
-  // History Tickets Modal Sheet
+  // History Dialog Display Function
   void _showHistoryDialog(BuildContext context, List<QueryDocumentSnapshot> historyDocs) {
-    showModalBottomSheet(
+    showDialog(
       context: context,
-      isScrollControlled: true,
-      shape: const RoundedRectangleBorder(
-        borderRadius: BorderRadius.vertical(top: Radius.circular(20)),
-      ),
-      builder: (context) {
-        return DraggableScrollableSheet(
-          expand: false,
-          initialChildSize: 0.6,
-          maxChildSize: 0.9,
-          builder: (_, controller) {
-            return Padding(
-              padding: const EdgeInsets.all(16.0),
-              child: Column(
-                crossAxisAlignment: CrossAxisAlignment.start,
-                children: [
-                  Center(
-                    child: Container(
-                      width: 40,
-                      height: 5,
-                      decoration: BoxDecoration(
-                        color: Colors.grey[300],
-                        borderRadius: BorderRadius.circular(10),
-                      ),
-                    ),
+      builder: (context) => AlertDialog(
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(16)),
+        title: const Row(
+          children: [
+            Icon(Icons.history, color: Color(0xFF1A2B4C)),
+            SizedBox(width: 8),
+            Text("Ticket History", style: TextStyle(fontWeight: FontWeight.bold)),
+          ],
+        ),
+        content: SizedBox(
+          width: double.maxFinite,
+          child: historyDocs.isEmpty
+              ? const Padding(
+                  padding: EdgeInsets.symmetric(vertical: 20.0),
+                  child: Text(
+                    "No past/used tickets found.",
+                    textAlign: TextAlign.center,
+                    style: TextStyle(color: Colors.grey),
                   ),
-                  const SizedBox(height: 15),
-                  const Text(
-                    "History Tickets (Used/Expired)",
-                    style: TextStyle(fontSize: 18, fontWeight: FontWeight.bold),
-                  ),
-                  const SizedBox(height: 10),
-                  historyDocs.isEmpty
-                      ? const Expanded(
-                          child: Center(child: Text("No ticket history found.")),
-                        )
-                      : Expanded(
-                          child: ListView.builder(
-                            controller: controller,
-                            itemCount: historyDocs.length,
-                            itemBuilder: (context, index) {
-                              TicketModel ticket = TicketModel.fromFirestore(historyDocs[index]);
-                              return Card(
-                                margin: const EdgeInsets.symmetric(vertical: 6),
-                                color: Colors.grey.shade100,
-                                child: ListTile(
-                                  leading: QrImageView(
-                                    data: _generateQrData(ticket),
-                                    size: 50.0,
-                                  ),
-                                  title: Text(
-                                    ticket.routeName,
-                                    style: const TextStyle(fontWeight: FontWeight.bold),
-                                  ),
-                                  subtitle: Text("Bus: ${ticket.busNumber} | LKR ${ticket.fare.toStringAsFixed(2)}"),
-                                  trailing: Container(
-                                    padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 4),
-                                    decoration: BoxDecoration(
-                                      color: Colors.red.shade100,
-                                      borderRadius: BorderRadius.circular(4),
-                                    ),
-                                    child: Text(
-                                      ticket.status,
-                                      style: TextStyle(
-                                        color: Colors.red.shade900,
-                                        fontWeight: FontWeight.bold,
-                                        fontSize: 11,
-                                      ),
-                                    ),
+                )
+              : ListView.builder(
+                  shrinkWrap: true,
+                  itemCount: historyDocs.length,
+                  itemBuilder: (context, index) {
+                    TicketModel ticket = TicketModel.fromFirestore(historyDocs[index]);
+                    DateTime pTime = ticket.purchaseTime;
+                    String formattedDate = "${pTime.day.toString().padLeft(2, '0')}/${pTime.month.toString().padLeft(2, '0')}/${pTime.year}";
+
+                    int hour = pTime.hour % 12 == 0 ? 12 : pTime.hour % 12;
+                    String period = pTime.hour >= 12 ? 'PM' : 'AM';
+                    String formattedTime = "${hour.toString().padLeft(2, '0')}:${pTime.minute.toString().padLeft(2, '0')} $period";
+                  
+                    return Card(
+                      margin: const EdgeInsets.symmetric(vertical: 6),
+                      elevation: 2,
+                      child: ListTile(
+                        contentPadding: const EdgeInsets.symmetric(horizontal: 16, vertical: 8),
+                        leading: const Icon(Icons.confirmation_number_outlined, color: Colors.grey, size: 30),
+                        title: Text(
+                          ticket.routeName,
+                          style: const TextStyle(fontWeight: FontWeight.bold, fontSize: 15),
+                        ),
+                        subtitle: Column(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            const SizedBox(height: 4),
+                            Text("Bus: ${ticket.busNumber} | Status: ${ticket.status}"),
+                            const SizedBox(height: 2),
+                            // Date & Time Display
+                            Row(
+                              children: [
+                                const Icon(Icons.access_time, size: 14, color: Colors.grey),
+                                const SizedBox(width: 4),
+                                Expanded(
+                                  child: Text(
+                                    "$formattedDate at $formattedTime",
+                                    overflow: TextOverflow.ellipsis,
+                                    style: const TextStyle(fontSize: 12, color: Colors.black87),
                                   ),
                                 ),
-                              );
-                            },
+                              ],
+                            ),
+                          ],
+                        ),
+                        trailing: Text(
+                          "LKR ${ticket.fare.toStringAsFixed(2)}",
+                          style: const TextStyle(
+                            fontWeight: FontWeight.bold, 
+                            color: Colors.redAccent,
+                            fontSize: 14,
                           ),
                         ),
-                ],
-              ),
-            );
-          },
-        );
-      },
+                      ),
+                    );
+                  },
+                ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(context),
+            child: const Text("Close", style: TextStyle(fontWeight: FontWeight.bold)),
+          ),
+        ],
+      ),
     );
   }
 
@@ -131,43 +140,28 @@ class _MyTicketsScreenState extends State<MyTicketsScreen> {
         foregroundColor: Colors.white,
       ),
       body: StreamBuilder<QuerySnapshot>(
-        // Filtering only the logged-in user's tickets from Firestore
-        stream: FirebaseFirestore.instance
-            .collection('tickets')
-            .where('passengerName', isEqualTo: currentUser?.displayName ?? currentUser?.email)
-            .snapshots(),
+        stream: FirebaseFirestore.instance.collection('tickets').where('userId', isEqualTo: currentUser?.uid).snapshots(),
         builder: (context, snapshot) {
-          if (snapshot.connectionState == ConnectionState.waiting) {
+          if (snapshot.connectionState == ConnectionState.waiting && widget.activeTicket == null) {
             return const Center(child: CircularProgressIndicator());
           }
 
-          if (!snapshot.hasData || snapshot.data!.docs.isEmpty) {
-            return const Center(
-              child: Text(
-                'No tickets found for your account.',
-                style: TextStyle(fontSize: 16),
-              ),
-            );
-          }
+          var docs = snapshot.hasData ? snapshot.data!.docs : <QueryDocumentSnapshot>[];
 
-          var docs = snapshot.data!.docs;
-
-          // 1. Valid / Retrieving unscanned tickets (sorted to bring the newest one to the top)
+          // 1. Valid tickets
           var validDocs = docs.where((doc) {
             var data = doc.data() as Map<String, dynamic>;
             return (data['status'] ?? 'VALID') == 'VALID';
           }).toList();
 
-          // 2. Used / Separating scanned tickets
-          var historyDocs = docs.where((doc) {
+          // 2. History tickets (Explicit List Type set කර ඇත)
+          List<QueryDocumentSnapshot> historyDocs = docs.where((doc) {
             var data = doc.data() as Map<String, dynamic>;
             return (data['status'] ?? '') != 'VALID';
           }).toList();
 
-          TicketModel? activeTicket;
-          if (validDocs.isNotEmpty) {
-            activeTicket = TicketModel.fromFirestore(validDocs.first);
-          }
+          TicketModel? activeTicket = widget.activeTicket ??
+              (validDocs.isNotEmpty ? TicketModel.fromFirestore(validDocs.first) : null);
 
           return Padding(
             padding: const EdgeInsets.all(16.0),
